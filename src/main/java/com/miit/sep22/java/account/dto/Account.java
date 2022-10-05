@@ -1,6 +1,7 @@
 package com.miit.sep22.java.account.dto;
 
 
+//TODO : SavingAccount / CurrentAccount
 public final class Account {
 
 
