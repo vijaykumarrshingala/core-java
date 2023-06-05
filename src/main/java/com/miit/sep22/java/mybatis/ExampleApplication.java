@@ -1,9 +1,9 @@
-package mybatis;
+package com.miit.sep22.java.mybatis;
 
+import com.miit.sep22.java.mybatis.mapper.StudentMapperV2;
+import com.miit.sep22.java.mybatis.domain.Student;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
-import mybatis.domain.Student;
-import mybatis.mapper.StudentMapper;
 import org.apache.ibatis.io.Resources;
 import org.apache.ibatis.session.SqlSession;
 import org.apache.ibatis.session.SqlSessionFactory;
@@ -11,15 +11,42 @@ import org.apache.ibatis.session.SqlSessionFactoryBuilder;
 import org.apache.ibatis.transaction.TransactionFactory;
 import org.apache.ibatis.transaction.jdbc.JdbcTransactionFactory;
 
+import javax.sql.DataSource;
 import java.io.IOException;
-import java.io.InputStream;
+import java.io.Reader;
+import java.sql.Connection;
+import java.sql.SQLException;
 import java.util.List;
 
 public class ExampleApplication {
     private static SqlSessionFactory sessionFactory;
 
-    public static void main(String[] args) throws IOException {
+    public static void main(String[] args) throws IOException, InterruptedException, SQLException {
 
+        //apacheDBCP();
+        //hikariCP();
+
+        hikariCP2();
+
+    }
+
+    private static void hikariCP2() throws IOException, InterruptedException, SQLException {
+
+        Reader reader = Resources.getResourceAsReader("com/miit/sep22/java/mybatis/mapper/mybatis-hikari.xml");
+        SqlSessionFactory sqlSessionFactory = new SqlSessionFactoryBuilder().build(reader);
+        SqlSession session = sqlSessionFactory.openSession();
+        Thread.sleep(4000);
+        HikariCPDataSourceFactory.getPoolInfo();
+        List<Student> student = session.selectList("getAll");
+        HikariCPDataSourceFactory.getPoolInfo();
+        System.out.println(student);
+        SqlSession session1 = sqlSessionFactory.openSession();
+        HikariCPDataSourceFactory.getPoolInfo();
+        Student s = session1.selectOne("getById", 1);
+        System.out.println(s.getBranch());
+    }
+
+    private static void hikariCP() throws IOException {
         HikariConfig config = new HikariConfig();
         config.setJdbcUrl("jdbc:mysql://localhost:3306/mysql_demo?characterEncoding=UTF-8");
         config.setUsername("root");
@@ -32,68 +59,34 @@ public class ExampleApplication {
 
         HikariDataSource dataSource = new HikariDataSource(config);
         sessionFactory = createSqlSessionFactory(dataSource);
-
-        //Reader reader = Resources.getResourceAsReader("mybatis/mybatis-config.xml");
-        //SqlSessionFactory sqlSessionFactory = new SqlSessionFactoryBuilder().build(reader);
         SqlSession session = sessionFactory.openSession();
 
-        Student s = new Student();
-
         //1st WAY
-        List<Student> student = session.selectList("mybatis.mapper.StudentMapper.getAll");
+        List<Student> student = session.selectList("com.miit.sep22.java.mybatis.mapper.StudentMapperV2.getAll");
         System.out.println(student.get(0).getBranch());
-
-
 
         //2nd WAY
 
         //With Mapper class usage if we add mapper in configuration  i.e configuration.addMappers
         try {
-            StudentMapper categoryMapper = session.getMapper(StudentMapper.class);
+            StudentMapperV2 categoryMapper = session.getMapper(StudentMapperV2.class);
             List<Student> student2 = categoryMapper.getAll();
             System.out.println("record inserted successfully : "+student2.get(0).getBranch());
             session.commit();
         } finally {
             session.close();
         }
-
-
-
-       /* try {
-            setupDataSource();
-            initializeSqlSessionFactory();
-
-            // Now you can use the SqlSessionFactory to create SqlSessions and execute SQL queries
-            // For example:
-            try (SqlSession session = sessionFactory.openSession()) {
-                MyObject result = session.selectOne("selectMyObject", parameterObject);
-                System.out.println(result);
-            }
-        } catch (Exception e) {
-            e.printStackTrace();
-        }*/
     }
 
-    private static void setupDataSource() {
-        HikariConfig config = new HikariConfig();
-        config.setJdbcUrl("jdbc:mysql://localhost:3306/mysql_demo?characterEncoding=UTF-8");
-        config.setUsername("root");
-        config.setPassword("admin");
+    private static void apacheDBCP() throws IOException {
 
-        // Additional HikariCP configuration options
-        config.setMinimumIdle(2);
-        config.setMaximumPoolSize(10);
-        // ... more config options ...
-
-        HikariDataSource dataSource = new HikariDataSource(config);
-        sessionFactory = createSqlSessionFactory(dataSource);
+        Reader reader = Resources.getResourceAsReader("mybatis/mybatis-config.xml");
+        SqlSessionFactory sqlSessionFactory = new SqlSessionFactoryBuilder().build(reader);
+        SqlSession session = sqlSessionFactory.openSession();
+        List<Student> student = session.selectList("getAll");
+        System.out.println(student);
     }
 
-    private static void initializeSqlSessionFactory() throws IOException {
-        try (InputStream inputStream = Resources.getResourceAsStream("SqlMapConfig.xml")) {
-            sessionFactory = new SqlSessionFactoryBuilder().build(inputStream);
-        }
-    }
 
     private static SqlSessionFactory createSqlSessionFactory(HikariDataSource dataSource) {
         TransactionFactory transactionFactory = new JdbcTransactionFactory();
@@ -106,7 +99,7 @@ public class ExampleApplication {
 
         // Load the iBATIS mapping XML file
 
-        configuration.addMappers("mybatis.mapper"); // Add your mapper interfaces here if using mappers
+        configuration.addMappers("com.miit.sep22.java.mybatis.mapper"); // Add your mapper interfaces here if using mappers
 
         return new SqlSessionFactoryBuilder().build(configuration);
     }

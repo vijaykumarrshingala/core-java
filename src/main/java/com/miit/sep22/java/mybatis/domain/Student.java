@@ -1,4 +1,4 @@
-package mybatis.domain;
+package com.miit.sep22.java.mybatis.domain;
 
 
 public class Student {
