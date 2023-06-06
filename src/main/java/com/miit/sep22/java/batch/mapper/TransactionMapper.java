@@ -16,7 +16,7 @@ public class TransactionMapper<T extends TransactionDto, R extends String> imple
         validateRecord(record);
 
         List<String> rList = Arrays.asList(record.split(","))
-                .stream().map(String::strip)
+                .stream().map(String::trim)
                 .collect(Collectors.toList());
 
         try {

@@ -27,7 +27,7 @@ public class WithoutThreadTransactionFileProcessor {
     public File process(String fileName) throws IOException {
 
         FileInputStream inputStream = reader.read(fileName);
-        Scanner scanner = new Scanner(inputStream, Charset.defaultCharset());
+        Scanner scanner = null;//new Scanner(inputStream, Charset.defaultCharset());
         List<TransactionDto> transactions = new ArrayList<>();
 
         while (scanner.hasNext()) {
