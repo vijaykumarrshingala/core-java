@@ -1,0 +1,12 @@
+spring:
+  ssl:
+    bundles:
+      mybundle:
+        key:
+          store: classpath:keystore/my-keystore.jks
+          password: your_password
+          type: JKS
+        trust:
+          store: classpath:keystore/my-keystore.jks
+          password: your_password
+          type: JKS
