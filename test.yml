@@ -1,10 +1,5 @@
-spring:
-  ssl:
-    bundles:
-      mybundle:
-        key:
-          store: classpath:keystore/my-keystore.jks
-          password: changeit
-        trust:
-          store: classpath:keystore/my-truststore.jks
-          password: changeit
+server.port=8082
+#trust store location
+trust.store=classpath:keystore/baeldung.p12
+#trust store password
+trust.store.password=password
