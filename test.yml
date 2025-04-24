@@ -4,9 +4,7 @@ spring:
       mybundle:
         key:
           store: classpath:keystore/my-keystore.jks
-          password: your_password
-          type: JKS
+          password: changeit
         trust:
-          store: classpath:keystore/my-keystore.jks
-          password: your_password
-          type: JKS
+          store: classpath:keystore/my-truststore.jks
+          password: changeit
