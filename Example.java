@@ -1,12 +1,12 @@
+import io.netty.handler.ssl.SslContextBuilder;
 import org.springframework.boot.ssl.SslBundle;
 import org.springframework.boot.ssl.SslBundles;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.client.reactive.ReactorClientHttpConnector;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.reactive.function.client.WebClient;
 import reactor.netty.http.client.HttpClient;
-import io.netty.handler.ssl.SslContext;
-
-import java.security.NoSuchAlgorithmException;
 
 @Configuration
 public class RestClientConfig {
@@ -18,24 +18,22 @@ public class RestClientConfig {
     }
 
     @Bean
-    public RestClient secureRestClient() throws Exception {
-        // Get the SSL Bundle
+    public RestClient restClient() throws Exception {
         SslBundle sslBundle = sslBundles.getBundle("client");
 
-        // Create Netty SslContext from it
-        SslContext sslContext = SslContextBuilder
-            .forClient()
-            .trustManager(sslBundle.getTrustManagerFactory())
-            .keyManager(sslBundle.getKeyManagerFactory())
-            .build();
+        var sslContext = SslContextBuilder
+                .forClient()
+                .trustManager(sslBundle.getTrustManagerFactory())
+                .keyManager(sslBundle.getKeyManagerFactory())
+                .build();
 
-        // Create Reactor Netty HttpClient with SSL context
         HttpClient httpClient = HttpClient.create()
-            .secure(sslSpec -> sslSpec.sslContext(sslContext));
+                .secure(t -> t.sslContext(sslContext));
 
-        // Build and return RestClient
-        return RestClient.builder()
-            .httpConnector(new ReactorClientHttpConnector(httpClient))
-            .build();
+        WebClient webClient = WebClient.builder()
+                .clientConnector(new ReactorClientHttpConnector(httpClient))
+                .build();
+
+        return RestClient.builder(webClient).build();
     }
 }
