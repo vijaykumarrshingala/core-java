@@ -1,23 +1,41 @@
+import org.springframework.boot.ssl.SslBundle;
+import org.springframework.boot.ssl.SslBundles;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.web.client.RestClient;
+import reactor.netty.http.client.HttpClient;
+import io.netty.handler.ssl.SslContext;
+
+import java.security.NoSuchAlgorithmException;
+
 @Configuration
-public class CustomRestTemplateConfiguration {
+public class RestClientConfig {
 
-    @Value("${trust.store}")
-    private Resource trustStore;
+    private final SslBundles sslBundles;
 
-    @Value("${trust.store.password}")
-    private String trustStorePassword;
+    public RestClientConfig(SslBundles sslBundles) {
+        this.sslBundles = sslBundles;
+    }
 
     @Bean
-    public RestTemplate restTemplate() throws KeyManagementException, NoSuchAlgorithmException, KeyStoreException, CertificateException, MalformedURLException, IOException {
+    public RestClient secureRestClient() throws Exception {
+        // Get the SSL Bundle
+        SslBundle sslBundle = sslBundles.getBundle("client");
 
-        SSLContext sslContext = new SSLContextBuilder()
-         .loadTrustMaterial(trustStore.getURL(), trustStorePassword.toCharArray()).build();
-        SSLConnectionSocketFactory sslConFactory = new SSLConnectionSocketFactory(sslContext);
-        HttpClientConnectionManager cm = PoolingHttpClientConnectionManagerBuilder.create()
-                .setSSLSocketFactory(sslConFactory)
-                .build();
-        CloseableHttpClient httpClient = HttpClients.custom().setConnectionManager(cm).build();
-        ClientHttpRequestFactory requestFactory = new HttpComponentsClientHttpRequestFactory(httpClient);
-        return new RestTemplate(requestFactory);
+        // Create Netty SslContext from it
+        SslContext sslContext = SslContextBuilder
+            .forClient()
+            .trustManager(sslBundle.getTrustManagerFactory())
+            .keyManager(sslBundle.getKeyManagerFactory())
+            .build();
+
+        // Create Reactor Netty HttpClient with SSL context
+        HttpClient httpClient = HttpClient.create()
+            .secure(sslSpec -> sslSpec.sslContext(sslContext));
+
+        // Build and return RestClient
+        return RestClient.builder()
+            .httpConnector(new ReactorClientHttpConnector(httpClient))
+            .build();
     }
 }
