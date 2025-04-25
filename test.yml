@@ -1,5 +1,11 @@
-server.port=8082
-#trust store location
-trust.store=classpath:keystore/baeldung.p12
-#trust store password
-trust.store.password=password
+spring:
+  ssl:
+    bundle:
+      jks:
+        client:
+          keystore:
+            location: classpath:client-truststore.jks
+            password: changeit
+            type: JKS
+          key:
+            alias: clientkey
