@@ -1,5 +1,1 @@
-keytool -importcert \
-  -alias mycert \
-  -file your-cert.crt \
-  -keystore mykeystore.jks \
-  -storepass changeit
+grep -E '\[(.*):(20:(3[7-9]|[4-5][0-9])|21:([0-3][0-9]|4[0-6])):.*\] "GET /login' access_log
