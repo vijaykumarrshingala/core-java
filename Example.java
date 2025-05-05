@@ -1,46 +1,49 @@
-import org.apache.http.HttpHost;
-import org.apache.http.auth.AuthScope;
-import org.apache.http.auth.UsernamePasswordCredentials;
-import org.apache.http.client.CredentialsProvider;
-import org.apache.http.impl.client.BasicCredentialsProvider;
-import org.apache.http.impl.client.CloseableHttpClient;
-import org.apache.http.impl.client.HttpClients;
+import org.apache.hc.client5.http.auth.AuthScope;
+import org.apache.hc.client5.http.auth.UsernamePasswordCredentials;
+import org.apache.hc.client5.http.classic.HttpClient;
+import org.apache.hc.client5.http.impl.auth.BasicCredentialsProvider;
+import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
+import org.apache.hc.client5.http.impl.classic.HttpClients;
+import org.apache.hc.core5.http.HttpHost;
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.context.annotation.Bean;
 import org.springframework.http.client.HttpComponentsClientHttpRequestFactory;
 import org.springframework.web.client.RestTemplate;
 
-public class RestTemplateWithProxyAuth {
+@SpringBootApplication
+public class ProxyRestTemplateApp {
 
-    public static RestTemplate createRestTemplateWithProxy() {
+    public static void main(String[] args) {
+        SpringApplication.run(ProxyRestTemplateApp.class, args);
+
+        RestTemplate restTemplate = new ProxyRestTemplateApp().restTemplate();
+        String response = restTemplate.getForObject("http://www.google.com", String.class);
+        System.out.println(response);
+    }
+
+    @Bean
+    public RestTemplate restTemplate() {
         String proxyHost = "your-proxy-host";
         int proxyPort = 8080;
         String proxyUser = "your-username";
         String proxyPassword = "your-password";
 
-        // 1. Set credentials for proxy
-        CredentialsProvider credsProvider = new BasicCredentialsProvider();
-        credsProvider.setCredentials(
+        BasicCredentialsProvider credentialsProvider = new BasicCredentialsProvider();
+        credentialsProvider.setCredentials(
             new AuthScope(proxyHost, proxyPort),
-            new UsernamePasswordCredentials(proxyUser, proxyPassword)
+            new UsernamePasswordCredentials(proxyUser, proxyPassword.toCharArray())
         );
 
-        // 2. Create HTTP client with proxy and credentials
         HttpHost proxy = new HttpHost(proxyHost, proxyPort);
+
         CloseableHttpClient httpClient = HttpClients.custom()
-            .setDefaultCredentialsProvider(credsProvider)
+            .setDefaultCredentialsProvider(credentialsProvider)
             .setProxy(proxy)
             .build();
 
-        // 3. Create request factory with that HTTP client
-        HttpComponentsClientHttpRequestFactory requestFactory =
-            new HttpComponentsClientHttpRequestFactory(httpClient);
+        HttpComponentsClientHttpRequestFactory factory = new HttpComponentsClientHttpRequestFactory(httpClient);
 
-        // 4. Create RestTemplate
-        return new RestTemplate(requestFactory);
-    }
-
-    public static void main(String[] args) {
-        RestTemplate restTemplate = createRestTemplateWithProxy();
-        String result = restTemplate.getForObject("http://www.google.com", String.class);
-        System.out.println(result);
+        return new RestTemplate(factory);
     }
 }
