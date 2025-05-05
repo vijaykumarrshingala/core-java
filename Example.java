@@ -1,53 +1,71 @@
-import org.apache.http.HttpHost;
-import org.apache.http.HttpRequest;
-import org.apache.http.auth.AuthScope;
-import org.apache.http.auth.UsernamePasswordCredentials;
-import org.apache.http.client.CredentialsProvider;
-import org.apache.http.client.methods.HttpRequestWrapper;
-import org.apache.http.impl.client.*;
-import org.apache.http.protocol.HttpContext;
-import org.springframework.http.client.HttpComponentsClientHttpRequestFactory;
-import org.springframework.web.client.RestTemplate;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.io.IOException;
+import java.net.*;
+import java.util.Base64;
 
-public class ProxyRestTemplateApp {
+public class HttpGetWithProxyAuth {
 
     public static void main(String[] args) {
-        RestTemplate restTemplate = createRestTemplateWithProxy();
-        String response = restTemplate.getForObject("https://www.google.com", String.class);
-        System.out.println(response);
-    }
-
-    public static RestTemplate createRestTemplateWithProxy() {
+        // Proxy details (you can change these values accordingly)
         String proxyHost = "your-proxy-host";
         int proxyPort = 8080;
+        
+        // Proxy credentials
         String proxyUser = "your-username";
         String proxyPassword = "your-password";
+        
+        // Target URL
+        String targetUrl = "http://www.google.com";  // Change this to the desired URL
 
-        CredentialsProvider credsProvider = new BasicCredentialsProvider();
-        credsProvider.setCredentials(
-            new AuthScope(proxyHost, proxyPort),
-            new UsernamePasswordCredentials(proxyUser, proxyPassword)
-        );
-
-        HttpHost proxy = new HttpHost(proxyHost, proxyPort);
-
-        // Preemptive proxy authentication interceptor
-        HttpRequestInterceptor preemptiveProxyAuth = (HttpRequest request, HttpContext context) -> {
-            request.addHeader("Proxy-Authorization", basicAuthHeader(proxyUser, proxyPassword));
-        };
-
-        CloseableHttpClient httpClient = HttpClients.custom()
-            .setDefaultCredentialsProvider(credsProvider)
-            .setProxy(proxy)
-            .addInterceptorFirst(preemptiveProxyAuth)
-            .build();
-
-        HttpComponentsClientHttpRequestFactory factory = new HttpComponentsClientHttpRequestFactory(httpClient);
-        return new RestTemplate(factory);
+        // Call the method to send request with proxy authentication
+        sendRequestWithProxyAuth(proxyHost, proxyPort, proxyUser, proxyPassword, targetUrl);
     }
 
-    private static String basicAuthHeader(String username, String password) {
-        String auth = username + ":" + password;
-        return "Basic " + java.util.Base64.getEncoder().encodeToString(auth.getBytes());
+    private static void sendRequestWithProxyAuth(String proxyHost, int proxyPort, String proxyUser, String proxyPassword, String targetUrl) {
+        try {
+            // Encode the username and password for Proxy Authentication (Basic Auth)
+            String encodedAuth = Base64.getEncoder().encodeToString(
+                    (proxyUser + ":" + proxyPassword).getBytes("UTF-8")
+            );
+
+            // Create a Proxy object
+            Proxy proxy = new Proxy(Proxy.Type.HTTP, new InetSocketAddress(proxyHost, proxyPort));
+
+            // Open a connection to the target URL using the proxy
+            URL url = new URL(targetUrl);
+            HttpURLConnection connection = (HttpURLConnection) url.openConnection(proxy);
+
+            // Add Proxy-Authorization header
+            connection.setRequestProperty("Proxy-Authorization", "Basic " + encodedAuth);
+            connection.setRequestMethod("GET");
+            connection.setConnectTimeout(5000);  // Timeout for connecting
+            connection.setReadTimeout(5000);     // Timeout for reading the response
+
+            // Get the HTTP response code
+            int responseCode = connection.getResponseCode();
+            System.out.println("Response Code: " + responseCode);
+
+            // Using try-with-resources for auto-closing BufferedReader
+            try (BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(
+                            responseCode >= 200 && responseCode < 300
+                                    ? connection.getInputStream()    // Success response body
+                                    : connection.getErrorStream()    // Error response body
+                    )
+            )) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    System.out.println(line);  // Print response line by line
+                }
+            }
+
+        } catch (IOException e) {
+            System.err.println("An error occurred during the HTTP request: " + e.getMessage());
+            e.printStackTrace();
+        } finally {
+            // Any cleanup can be added here if necessary
+            System.out.println("Request completed.");
+        }
     }
 }
