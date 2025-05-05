@@ -1,49 +1,53 @@
-import org.apache.hc.client5.http.auth.AuthScope;
-import org.apache.hc.client5.http.auth.UsernamePasswordCredentials;
-import org.apache.hc.client5.http.classic.HttpClient;
-import org.apache.hc.client5.http.impl.auth.BasicCredentialsProvider;
-import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
-import org.apache.hc.client5.http.impl.classic.HttpClients;
-import org.apache.hc.core5.http.HttpHost;
-import org.springframework.boot.SpringApplication;
-import org.springframework.boot.autoconfigure.SpringBootApplication;
-import org.springframework.context.annotation.Bean;
+import org.apache.http.HttpHost;
+import org.apache.http.HttpRequest;
+import org.apache.http.auth.AuthScope;
+import org.apache.http.auth.UsernamePasswordCredentials;
+import org.apache.http.client.CredentialsProvider;
+import org.apache.http.client.methods.HttpRequestWrapper;
+import org.apache.http.impl.client.*;
+import org.apache.http.protocol.HttpContext;
 import org.springframework.http.client.HttpComponentsClientHttpRequestFactory;
 import org.springframework.web.client.RestTemplate;
 
-@SpringBootApplication
 public class ProxyRestTemplateApp {
 
     public static void main(String[] args) {
-        SpringApplication.run(ProxyRestTemplateApp.class, args);
-
-        RestTemplate restTemplate = new ProxyRestTemplateApp().restTemplate();
-        String response = restTemplate.getForObject("http://www.google.com", String.class);
+        RestTemplate restTemplate = createRestTemplateWithProxy();
+        String response = restTemplate.getForObject("https://www.google.com", String.class);
         System.out.println(response);
     }
 
-    @Bean
-    public RestTemplate restTemplate() {
+    public static RestTemplate createRestTemplateWithProxy() {
         String proxyHost = "your-proxy-host";
         int proxyPort = 8080;
         String proxyUser = "your-username";
         String proxyPassword = "your-password";
 
-        BasicCredentialsProvider credentialsProvider = new BasicCredentialsProvider();
-        credentialsProvider.setCredentials(
+        CredentialsProvider credsProvider = new BasicCredentialsProvider();
+        credsProvider.setCredentials(
             new AuthScope(proxyHost, proxyPort),
-            new UsernamePasswordCredentials(proxyUser, proxyPassword.toCharArray())
+            new UsernamePasswordCredentials(proxyUser, proxyPassword)
         );
 
         HttpHost proxy = new HttpHost(proxyHost, proxyPort);
 
+        // Preemptive proxy authentication interceptor
+        HttpRequestInterceptor preemptiveProxyAuth = (HttpRequest request, HttpContext context) -> {
+            request.addHeader("Proxy-Authorization", basicAuthHeader(proxyUser, proxyPassword));
+        };
+
         CloseableHttpClient httpClient = HttpClients.custom()
-            .setDefaultCredentialsProvider(credentialsProvider)
+            .setDefaultCredentialsProvider(credsProvider)
             .setProxy(proxy)
+            .addInterceptorFirst(preemptiveProxyAuth)
             .build();
 
         HttpComponentsClientHttpRequestFactory factory = new HttpComponentsClientHttpRequestFactory(httpClient);
-
         return new RestTemplate(factory);
+    }
+
+    private static String basicAuthHeader(String username, String password) {
+        String auth = username + ":" + password;
+        return "Basic " + java.util.Base64.getEncoder().encodeToString(auth.getBytes());
     }
 }
