@@ -2,45 +2,47 @@ import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.net.*;
 
-public class HttpGetUsingSystemProxy {
+public class HttpGetWithExplicitProxy {
 
     public static void main(String[] args) {
         try {
-            // Enable use of OS-level proxy settings
-            System.setProperty("java.net.useSystemProxies", "true");
+            // Define proxy
+            String proxyHost = "your-proxy-host";
+            int proxyPort = 8080; // your proxy port
 
-            URI uri = new URI("http://www.google.com");
+            Proxy proxy = new Proxy(Proxy.Type.HTTP, new InetSocketAddress(proxyHost, proxyPort));
 
-            System.out.println("Detecting proxy for: " + uri);
-            ProxySelector selector = ProxySelector.getDefault();
-            Proxy proxy = selector.select(uri).get(0);
+            // Define target URL
+            URL url = new URL("http://www.google.com");
 
-            // Show proxy info
-            System.out.println("Proxy Type: " + proxy.type());
-            if (proxy.address() != null) {
-                InetSocketAddress addr = (InetSocketAddress) proxy.address();
-                System.out.println("Using proxy: " + addr.getHostName() + ":" + addr.getPort());
-            } else {
-                System.out.println("Direct connection (no proxy)");
-            }
-
-            // Open connection using the detected proxy
-            HttpURLConnection connection = (HttpURLConnection) uri.toURL().openConnection(proxy);
+            // Open connection using explicit proxy
+            HttpURLConnection connection = (HttpURLConnection) url.openConnection(proxy);
             connection.setRequestMethod("GET");
-            connection.setConnectTimeout(5000); // optional
-            connection.setReadTimeout(5000);    // optional
+            connection.setConnectTimeout(5000);
+            connection.setReadTimeout(5000);
+
+            // Optional: If your proxy requires basic authentication
+            // String encoded = Base64.getEncoder().encodeToString("username:password".getBytes());
+            // connection.setRequestProperty("Proxy-Authorization", "Basic " + encoded);
 
             int responseCode = connection.getResponseCode();
             System.out.println("Response Code: " + responseCode);
 
-            BufferedReader in = new BufferedReader(
-                    new InputStreamReader(connection.getInputStream())
+            BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(
+                            connection.getErrorStream() != null ? connection.getErrorStream() : connection.getInputStream()
+                    )
             );
-            String inputLine;
-            StringBuilder content = new StringBuilder();
-            while ((inputLine = in.readLine()) != null) {
-                content.append(inputLine).append('\n');
+            String line;
+            while ((line = reader.readLine()) != null) {
+                System.out.println(line);
             }
 
-            in.close();
+            reader.close();
             connection.disconnect();
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+}
