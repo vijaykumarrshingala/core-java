@@ -1,30 +1,40 @@
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.net.*;
+import java.util.Base64;
 
-public class HttpGetWithExplicitProxy {
+public class HttpGetWithProxyAuth {
 
     public static void main(String[] args) {
         try {
-            // Define proxy
+            // Proxy details
             String proxyHost = "your-proxy-host";
-            int proxyPort = 8080; // your proxy port
+            int proxyPort = 8080;
 
+            // Proxy credentials
+            String proxyUser = "your-username";
+            String proxyPassword = "your-password";
+
+            // Encode username:password in Base64
+            String encodedAuth = Base64.getEncoder().encodeToString(
+                    (proxyUser + ":" + proxyPassword).getBytes("UTF-8")
+            );
+
+            // Create proxy
             Proxy proxy = new Proxy(Proxy.Type.HTTP, new InetSocketAddress(proxyHost, proxyPort));
 
-            // Define target URL
+            // Target URL
             URL url = new URL("http://www.google.com");
-
-            // Open connection using explicit proxy
             HttpURLConnection connection = (HttpURLConnection) url.openConnection(proxy);
+
+            // Add Proxy-Authorization header
+            connection.setRequestProperty("Proxy-Authorization", "Basic " + encodedAuth);
+
             connection.setRequestMethod("GET");
             connection.setConnectTimeout(5000);
             connection.setReadTimeout(5000);
 
-            // Optional: If your proxy requires basic authentication
-            // String encoded = Base64.getEncoder().encodeToString("username:password".getBytes());
-            // connection.setRequestProperty("Proxy-Authorization", "Basic " + encoded);
-
+            // Read response
             int responseCode = connection.getResponseCode();
             System.out.println("Response Code: " + responseCode);
 
@@ -33,6 +43,7 @@ public class HttpGetWithExplicitProxy {
                             connection.getErrorStream() != null ? connection.getErrorStream() : connection.getInputStream()
                     )
             );
+
             String line;
             while ((line = reader.readLine()) != null) {
                 System.out.println(line);
