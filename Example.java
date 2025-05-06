@@ -1,3 +1,5 @@
+package com.example.demo.config;
+
 import org.apache.hc.client5.http.auth.AuthScope;
 import org.apache.hc.client5.http.auth.AuthSchemes;
 import org.apache.hc.client5.http.auth.Credentials;
@@ -6,9 +8,9 @@ import org.apache.hc.client5.http.impl.auth.BasicCredentialsProvider;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.apache.hc.client5.http.impl.classic.HttpClients;
 import org.apache.hc.core5.http.HttpHost;
-import org.apache.hc.core5.http.HttpRequest;
 import org.apache.hc.core5.http.io.HttpRequestInterceptor;
 import org.apache.hc.core5.http.protocol.HttpContext;
+import org.apache.hc.core5.http.HttpRequest;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.client.HttpComponentsClientHttpRequestFactory;
@@ -26,18 +28,18 @@ public class HttpClientConfig {
         int proxyPort = 8080;
         String proxyUser = "your-username";
         String proxyPassword = "your-password";
-        String proxyDomain = "your-domain";
-        String workstation = "your-workstation";
+        String proxyDomain = "your-domain";        // <-- important for NTLM
+        String workstation = "your-workstation";   // or use InetAddress.getLocalHost().getHostName()
 
         HttpHost proxy = new HttpHost(proxyHost, proxyPort);
 
-        // Updated NTCredentials using builder (non-deprecated)
-        Credentials ntlmCreds = NTCredentials.Builder.create()
-                .setUserName(proxyUser)
-                .setPassword(proxyPassword.toCharArray())
-                .setWorkstation(workstation)
-                .setDomain(proxyDomain)
-                .build();
+        // NTLM Credentials
+        Credentials ntlmCreds = new NTCredentials(
+                proxyUser,
+                proxyPassword.toCharArray(),
+                workstation,
+                proxyDomain
+        );
 
         BasicCredentialsProvider credsProvider = new BasicCredentialsProvider();
         credsProvider.setCredentials(
@@ -45,7 +47,7 @@ public class HttpClientConfig {
                 ntlmCreds
         );
 
-        // Optional preemptive header (some proxies require this)
+        // Optional: Preemptive NTLM if needed (only some proxies require this hack)
         String auth = proxyDomain + "\\" + proxyUser + ":" + proxyPassword;
         String encoded = Base64.getEncoder().encodeToString(auth.getBytes());
         HttpRequestInterceptor forceProxyAuth = (HttpRequest request, HttpContext context) -> {
@@ -55,7 +57,10 @@ public class HttpClientConfig {
         CloseableHttpClient client = HttpClients.custom()
                 .setProxy(proxy)
                 .setDefaultCredentialsProvider(credsProvider)
-                .addRequestInterceptorFirst(forceProxyAuth) // Remove if not needed
+                .addRequestInterceptorFirst(forceProxyAuth)  // optional, remove if causes issues
                 .build();
 
         HttpComponentsClientHttpRequestFactory factory = new HttpComponentsClientHttpRequestFactory(client);
+        return new RestTemplate(factory);
+    }
+}
