@@ -1,77 +1,76 @@
-import org.apache.hc.client5.http.classic.CloseableHttpClient;
+import org.apache.hc.client5.http.auth.AuthScope;
+import org.apache.hc.client5.http.auth.UsernamePasswordCredentials;
+import org.apache.hc.client5.http.config.RequestConfig;
+import org.apache.hc.client5.http.impl.auth.BasicCredentialsProvider;
+import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.apache.hc.client5.http.impl.classic.HttpClients;
 import org.apache.hc.client5.http.impl.io.PoolingHttpClientConnectionManagerBuilder;
-import org.apache.hc.client5.http.config.RequestConfig;
-import org.apache.hc.client5.http.ssl.DefaultClientTlsStrategy;
+import org.apache.hc.client5.http.io.HttpClientConnectionManager;
+import org.apache.hc.client5.http.ssl.SSLConnectionSocketFactoryBuilder;
 import org.apache.hc.core5.http.HttpHost;
-import org.apache.hc.core5.http.message.BasicHeader;
-import org.apache.hc.core5.reactor.IOReactorConfig;
-import org.apache.hc.core5.ssl.SSLContexts;
-import org.apache.hc.core5.ssl.SSLInitializationException;
-import org.apache.hc.core5.util.Timeout;
-import org.springframework.boot.web.client.RestTemplateCustomizer;
+import org.apache.hc.core5.ssl.SSLContextBuilder;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.client.HttpComponentsClientHttpRequestFactory;
 import org.springframework.web.client.RestTemplate;
 
 import javax.net.ssl.SSLContext;
-import java.io.FileInputStream;
-import java.security.KeyStore;
-import java.util.List;
+import java.security.KeyManagementException;
+import java.security.KeyStoreException;
+import java.security.NoSuchAlgorithmException;
+import java.security.cert.CertificateException;
+import java.util.concurrent.TimeUnit;
 
 @Configuration
-public class RestTemplateProxyWithTrustStoreConfig {
+public class RestTemplateConfig {
 
     @Bean
-    public RestTemplateCustomizer proxyWithTrustStoreCustomizer() {
-        return restTemplate -> {
-            try {
-                // === Proxy and TLS configuration ===
-                String proxyHost = "your-proxy-host";
-                int proxyPort = 8080;
-                String bearerToken = "your-bearer-token";
-                String trustStorePath = "/path/to/truststore.jks";
-                String trustStorePassword = "changeit";
+    public RestTemplate restTemplate() throws Exception {
+        return new RestTemplate(httpRequestFactory());
+    }
 
-                // Load trust store
-                KeyStore trustStore = KeyStore.getInstance("JKS");
-                try (FileInputStream fis = new FileInputStream(trustStorePath)) {
-                    trustStore.load(fis, trustStorePassword.toCharArray());
-                }
+    @Bean
+    public HttpComponentsClientHttpRequestFactory httpRequestFactory() throws Exception {
+        return new HttpComponentsClientHttpRequestFactory(httpClient());
+    }
 
-                SSLContext sslContext = SSLContexts.custom()
-                        .loadTrustMaterial(trustStore, null)
-                        .build();
+    @Bean
+    public CloseableHttpClient httpClient() throws Exception {
+        // Configure proxy
+        HttpHost proxy = new HttpHost("http", "your.proxy.host", 8080);
+        
+        BasicCredentialsProvider credentialsProvider = new BasicCredentialsProvider();
+        credentialsProvider.setCredentials(
+                new AuthScope(proxy),
+                new UsernamePasswordCredentials("proxyUsername", "proxyPassword".toCharArray())
+        );
 
-                // Use TlsStrategy instead of deprecated SSLConnectionSocketFactory
-                var tlsStrategy = new DefaultClientTlsStrategy(sslContext);
+        // Configure SSL with your truststore using the builder pattern
+        SSLContext sslContext = SSLContextBuilder.create()
+                .loadTrustMaterial(
+                        new java.io.File("path/to/your/truststore.jks"),
+                        "truststorePassword".toCharArray()
+                )
+                .build();
 
-                var connManager = PoolingHttpClientConnectionManagerBuilder.create()
-                        .setTlsStrategy(tlsStrategy)
-                        .build();
+        HttpClientConnectionManager connectionManager = PoolingHttpClientConnectionManagerBuilder.create()
+                .setSSLSocketFactory(SSLConnectionSocketFactoryBuilder.create()
+                        .setSslContext(sslContext)
+                        .build())
+                .build();
 
-                HttpHost proxy = new HttpHost(proxyHost, proxyPort);
+        // Configure timeouts
+        RequestConfig requestConfig = RequestConfig.custom()
+                .setConnectTimeout(30, TimeUnit.SECONDS)
+                .setConnectionRequestTimeout(30, TimeUnit.SECONDS)
+                .setResponseTimeout(30, TimeUnit.SECONDS)
+                .build();
 
-                RequestConfig requestConfig = RequestConfig.custom()
-                        .setProxy(proxy)
-                        .setConnectionRequestTimeout(Timeout.ofSeconds(30))
-                        .setConnectTimeout(Timeout.ofSeconds(30))
-                        .build();
-
-                CloseableHttpClient httpClient = HttpClients.custom()
-                        .setConnectionManager(connManager)
-                        .setDefaultRequestConfig(requestConfig)
-                        .setDefaultHeaders(List.of(
-                                new BasicHeader("Proxy-Authorization", "Bearer " + bearerToken)
-                        ))
-                        .build();
-
-                restTemplate.setRequestFactory(new HttpComponentsClientHttpRequestFactory(httpClient));
-
-            } catch (Exception e) {
-                throw new RuntimeException("Failed to configure RestTemplate with proxy and truststore", e);
-            }
-        };
+        return HttpClients.custom()
+                .setConnectionManager(connectionManager)
+                .setDefaultRequestConfig(requestConfig)
+                .setProxy(proxy)
+                .setDefaultCredentialsProvider(credentialsProvider)
+                .build();
     }
 }
