@@ -1,14 +1,14 @@
 import org.apache.hc.client5.http.classic.CloseableHttpClient;
 import org.apache.hc.client5.http.impl.classic.HttpClients;
-import org.apache.hc.client5.http.impl.io.PoolingHttpClientConnectionManager;
+import org.apache.hc.client5.http.impl.io.PoolingHttpClientConnectionManagerBuilder;
 import org.apache.hc.client5.http.config.RequestConfig;
+import org.apache.hc.client5.http.ssl.DefaultClientTlsStrategy;
 import org.apache.hc.core5.http.HttpHost;
 import org.apache.hc.core5.http.message.BasicHeader;
-import org.apache.hc.core5.ssl.SSLContextBuilder;
-import org.apache.hc.core5.ssl.SSLConnectionSocketFactory;
+import org.apache.hc.core5.reactor.IOReactorConfig;
 import org.apache.hc.core5.ssl.SSLContexts;
+import org.apache.hc.core5.ssl.SSLInitializationException;
 import org.apache.hc.core5.util.Timeout;
-import org.apache.hc.client5.http.io.HttpClientConnectionManager;
 import org.springframework.boot.web.client.RestTemplateCustomizer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -27,14 +27,14 @@ public class RestTemplateProxyWithTrustStoreConfig {
     public RestTemplateCustomizer proxyWithTrustStoreCustomizer() {
         return restTemplate -> {
             try {
-                // Proxy & truststore config
+                // === Proxy and TLS configuration ===
                 String proxyHost = "your-proxy-host";
                 int proxyPort = 8080;
                 String bearerToken = "your-bearer-token";
                 String trustStorePath = "/path/to/truststore.jks";
                 String trustStorePassword = "changeit";
 
-                // Load JKS trust store
+                // Load trust store
                 KeyStore trustStore = KeyStore.getInstance("JKS");
                 try (FileInputStream fis = new FileInputStream(trustStorePath)) {
                     trustStore.load(fis, trustStorePassword.toCharArray());
@@ -44,14 +44,12 @@ public class RestTemplateProxyWithTrustStoreConfig {
                         .loadTrustMaterial(trustStore, null)
                         .build();
 
-                // Create SSL socket factory
-                SSLConnectionSocketFactory sslSocketFactory = new SSLConnectionSocketFactory(sslContext);
+                // Use TlsStrategy instead of deprecated SSLConnectionSocketFactory
+                var tlsStrategy = new DefaultClientTlsStrategy(sslContext);
 
-                // Connection manager with SSL support
-                PoolingHttpClientConnectionManager connectionManager =
-                        new PoolingHttpClientConnectionManager();
-                connectionManager.setDefaultSocketConfig(sslSocketFactory.getSocketConfig());
-                connectionManager.setConnectionConfigResolver(sslSocketFactory);
+                var connManager = PoolingHttpClientConnectionManagerBuilder.create()
+                        .setTlsStrategy(tlsStrategy)
+                        .build();
 
                 HttpHost proxy = new HttpHost(proxyHost, proxyPort);
 
@@ -62,7 +60,7 @@ public class RestTemplateProxyWithTrustStoreConfig {
                         .build();
 
                 CloseableHttpClient httpClient = HttpClients.custom()
-                        .setConnectionManager(connectionManager)
+                        .setConnectionManager(connManager)
                         .setDefaultRequestConfig(requestConfig)
                         .setDefaultHeaders(List.of(
                                 new BasicHeader("Proxy-Authorization", "Bearer " + bearerToken)
