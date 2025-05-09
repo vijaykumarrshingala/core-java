@@ -1,76 +1,51 @@
-import org.apache.hc.client5.http.auth.AuthScope;
-import org.apache.hc.client5.http.auth.UsernamePasswordCredentials;
+import org.apache.hc.client5.http.classic.methods.HttpGet;
 import org.apache.hc.client5.http.config.RequestConfig;
-import org.apache.hc.client5.http.impl.auth.BasicCredentialsProvider;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.apache.hc.client5.http.impl.classic.HttpClients;
-import org.apache.hc.client5.http.impl.io.PoolingHttpClientConnectionManagerBuilder;
-import org.apache.hc.client5.http.io.HttpClientConnectionManager;
-import org.apache.hc.client5.http.ssl.SSLConnectionSocketFactoryBuilder;
 import org.apache.hc.core5.http.HttpHost;
-import org.apache.hc.core5.ssl.SSLContextBuilder;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
-import org.springframework.http.client.HttpComponentsClientHttpRequestFactory;
-import org.springframework.web.client.RestTemplate;
+import org.apache.hc.core5.http.io.entity.EntityUtils;
+import org.apache.hc.core5.util.Base64;
 
-import javax.net.ssl.SSLContext;
-import java.security.KeyManagementException;
-import java.security.KeyStoreException;
-import java.security.NoSuchAlgorithmException;
-import java.security.cert.CertificateException;
-import java.util.concurrent.TimeUnit;
+public class ProxyWithBasicAuthManual {
 
-@Configuration
-public class RestTemplateConfig {
+    public static void main(String[] args) throws Exception {
+        // Proxy details
+        String proxyHost = "abpm-di99-8001";
+        int proxyPort = 8085;
+        String username = "amit101";
+        String password = "yourPassword";
 
-    @Bean
-    public RestTemplate restTemplate() throws Exception {
-        return new RestTemplate(httpRequestFactory());
-    }
+        // Encode Basic Auth manually
+        String credentials = username + ":" + password;
+        String encodedCreds = Base64.encode(credentials.getBytes());
+        String proxyAuthHeader = "Basic " + encodedCreds;
 
-    @Bean
-    public HttpComponentsClientHttpRequestFactory httpRequestFactory() throws Exception {
-        return new HttpComponentsClientHttpRequestFactory(httpClient());
-    }
+        // Target URL
+        String targetUrl = "https://httpbin.org/ip";
 
-    @Bean
-    public CloseableHttpClient httpClient() throws Exception {
-        // Configure proxy
-        HttpHost proxy = new HttpHost("http", "your.proxy.host", 8080);
-        
-        BasicCredentialsProvider credentialsProvider = new BasicCredentialsProvider();
-        credentialsProvider.setCredentials(
-                new AuthScope(proxy),
-                new UsernamePasswordCredentials("proxyUsername", "proxyPassword".toCharArray())
-        );
+        // Create proxy host
+        HttpHost proxy = new HttpHost(proxyHost, proxyPort);
 
-        // Configure SSL with your truststore using the builder pattern
-        SSLContext sslContext = SSLContextBuilder.create()
-                .loadTrustMaterial(
-                        new java.io.File("path/to/your/truststore.jks"),
-                        "truststorePassword".toCharArray()
-                )
-                .build();
+        // Build request config with proxy
+        RequestConfig config = RequestConfig.custom()
+            .setProxy(proxy)
+            .build();
 
-        HttpClientConnectionManager connectionManager = PoolingHttpClientConnectionManagerBuilder.create()
-                .setSSLSocketFactory(SSLConnectionSocketFactoryBuilder.create()
-                        .setSslContext(sslContext)
-                        .build())
-                .build();
+        // Build client
+        try (CloseableHttpClient client = HttpClients.custom()
+                .setDefaultRequestConfig(config)
+                .build()) {
 
-        // Configure timeouts
-        RequestConfig requestConfig = RequestConfig.custom()
-                .setConnectTimeout(30, TimeUnit.SECONDS)
-                .setConnectionRequestTimeout(30, TimeUnit.SECONDS)
-                .setResponseTimeout(30, TimeUnit.SECONDS)
-                .build();
+            HttpGet request = new HttpGet(targetUrl);
 
-        return HttpClients.custom()
-                .setConnectionManager(connectionManager)
-                .setDefaultRequestConfig(requestConfig)
-                .setProxy(proxy)
-                .setDefaultCredentialsProvider(credentialsProvider)
-                .build();
+            // Add Proxy-Authorization header manually
+            request.addHeader("Proxy-Authorization", proxyAuthHeader);
+
+            String response = client.execute(request, httpResponse ->
+                EntityUtils.toString(httpResponse.getEntity())
+            );
+
+            System.out.println("Response:\n" + response);
+        }
     }
 }
