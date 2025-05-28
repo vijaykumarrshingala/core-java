@@ -1,75 +1,72 @@
-import javax.net.ssl.*;
-import java.io.*;
-import java.net.*;
-import java.nio.charset.StandardCharsets;
-import java.security.KeyStore;
-import java.security.SecureRandom;
-import java.util.Base64;
+import java.util.*;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 
-public class HttpGetWithProxyAuthAndTrustStore {
+public class PriceTaskManager {
 
-    public static void main(String[] args) {
-        try {
-            // === Trust Store Configuration ===
-            String trustStorePath = "path/to/your/truststore.jks";  // Or .p12 if using PKCS12
-            String trustStorePassword = "changeit"; // Set your trust store password
+    private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
+    private ScheduledFuture<?> scheduledTask;
+    private final PriceDataService priceDataService;
+    private final AtomicBoolean isRunning = new AtomicBoolean(false);
 
-            KeyStore trustStore = KeyStore.getInstance("JKS"); // or "PKCS12"
-            try (FileInputStream fis = new FileInputStream(trustStorePath)) {
-                trustStore.load(fis, trustStorePassword.toCharArray());
+    // Full symbol list (190 symbols)
+    private final List<String> allSymbols;
+
+    public PriceTaskManager(PriceDataService priceDataService, List<String> allSymbols) {
+        this.priceDataService = priceDataService;
+        this.allSymbols = allSymbols;
+    }
+
+    public synchronized void start() {
+        if (isRunning.get()) return;
+
+        Runnable task = () -> {
+            try {
+                fetchPricesConcurrently();
+            } catch (Exception e) {
+                e.printStackTrace();
             }
+        };
 
-            TrustManagerFactory tmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
-            tmf.init(trustStore);
+        scheduledTask = scheduler.scheduleWithFixedDelay(task, 0, 5, TimeUnit.SECONDS);
+        isRunning.set(true);
+    }
 
-            SSLContext sslContext = SSLContext.getInstance("TLS");
-            sslContext.init(null, tmf.getTrustManagers(), new SecureRandom());
-
-            // === Proxy Configuration ===
-            String proxyHost = "your-proxy-host";
-            int proxyPort = 8080;
-            String proxyUser = "your-username";
-            String proxyPassword = "your-password";
-
-            String encodedAuth = Base64.getEncoder().encodeToString(
-                    (proxyUser + ":" + proxyPassword).getBytes(StandardCharsets.UTF_8)
-            );
-
-            Proxy proxy = new Proxy(Proxy.Type.HTTP, new InetSocketAddress(proxyHost, proxyPort));
-
-            // === HTTPS Request Setup ===
-            URL url = new URL("https://www.google.com"); // HTTPS URL
-            HttpsURLConnection connection = (HttpsURLConnection) url.openConnection(proxy);
-
-            // Apply custom SSL context
-            connection.setSSLSocketFactory(sslContext.getSocketFactory());
-
-            // Add proxy auth header
-            connection.setRequestProperty("Proxy-Authorization", "Basic " + encodedAuth);
-
-            connection.setRequestMethod("GET");
-            connection.setConnectTimeout(5000);
-            connection.setReadTimeout(5000);
-
-            int responseCode = connection.getResponseCode();
-            System.out.println("Response Code: " + responseCode);
-
-            try (BufferedReader reader = new BufferedReader(
-                    new InputStreamReader(
-                            connection.getErrorStream() != null ? connection.getErrorStream() : connection.getInputStream(),
-                            StandardCharsets.UTF_8
-                    )
-            )) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    System.out.println(line);
-                }
-            }
-
-            connection.disconnect();
-
-        } catch (Exception e) {
-            e.printStackTrace();
+    public synchronized void stop() {
+        if (scheduledTask != null && !scheduledTask.isCancelled()) {
+            scheduledTask.cancel(true);
         }
+        isRunning.set(false);
+    }
+
+    public synchronized void restart() {
+        stop();
+        start();
+    }
+
+    private void fetchPricesConcurrently() {
+        List<List<String>> partitions = partitionSymbols(allSymbols, 100);
+
+        List<CompletableFuture<Void>> futures = new ArrayList<>();
+        for (List<String> batch : partitions) {
+            futures.add(CompletableFuture.runAsync(() -> {
+                priceDataService.fetchMarketPrice(batch);
+            }));
+        }
+
+        // Wait for all to complete (optional)
+        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+    }
+
+    private List<List<String>> partitionSymbols(List<String> symbols, int maxSize) {
+        List<List<String>> partitions = new ArrayList<>();
+        for (int i = 0; i < symbols.size(); i += maxSize) {
+            partitions.add(symbols.subList(i, Math.min(i + maxSize, symbols.size())));
+        }
+        return partitions;
+    }
+
+    public boolean isRunning() {
+        return isRunning.get();
     }
 }
