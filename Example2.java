@@ -1,54 +1,99 @@
-import org.apache.hc.client5.http.auth.AuthScope;
-import org.apache.hc.client5.http.auth.UsernamePasswordCredentials;
-import org.apache.hc.client5.http.classic.methods.HttpGet;
-import org.apache.hc.client5.http.classic.HttpClient;
-import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
-import org.apache.hc.client5.http.impl.classic.HttpClients;
-import org.apache.hc.client5.http.impl.auth.BasicCredentialsProvider;
-import org.apache.hc.core5.http.HttpHost;
-import org.apache.hc.core5.http.io.entity.EntityUtils;
-import org.apache.hc.client5.http.config.RequestConfig;
+private static final int BATCH_SIZE = 50;
+private final DataSource dataSource;
 
-public class ProxyWithAuthExample {
+private static final String UPDATE_SQL =
+    "UPDATE symbols SET price = ?, updated_time = CURRENT TIMESTAMP WHERE symbol = ?";
 
-    public static void main(String[] args) throws Exception {
-        // Proxy info
-        String proxyHost = "your.proxy.host";     // e.g., "10.10.1.100"
-        int proxyPort = 8080;
-        String proxyUser = "your_proxy_user";
-        String proxyPass = "your_proxy_password";
+private static final String INSERT_SQL =
+    "INSERT INTO symbols (symbol, price, updated_time) " +
+    "SELECT ?, ?, CURRENT TIMESTAMP " +
+    "WHERE NOT EXISTS (SELECT 1 FROM symbols WHERE symbol = ?)";
 
-        // Target URL
-        String targetUrl = "https://www.example.com";
+public SymbolBatchUpdater(DataSource dataSource) {
+    this.dataSource = dataSource;
+}
 
-        // Set proxy
-        HttpHost proxy = new HttpHost("http", proxyHost, proxyPort);
+public void batchUpsertInChunks(List<SymbolData> symbols) {
+    if (symbols.isEmpty()) return;
 
-        // Credentials provider for proxy
-        BasicCredentialsProvider credsProvider = new BasicCredentialsProvider();
-        credsProvider.setCredentials(
-            new AuthScope(proxy),
-            new UsernamePasswordCredentials(proxyUser, proxyPass.toCharArray())
-        );
+    try (Connection conn = dataSource.getConnection()) {
+        conn.setAutoCommit(false);
 
-        // Build HTTP client
-        CloseableHttpClient httpclient = HttpClients.custom()
-            .setProxy(proxy)
-            .setDefaultCredentialsProvider(credsProvider)
-            .build();
+        // Step 1: Preload existing prices for all symbols in one query
+        Map<String, Double> existingPrices = preloadExistingPrices(conn, symbols);
 
-        try {
-            HttpGet httpget = new HttpGet(targetUrl);
-            System.out.println("Executing request: " + httpget.getMethod() + " " + httpget.getUri());
+        try (PreparedStatement updatePs = conn.prepareStatement(UPDATE_SQL);
+             PreparedStatement insertPs = conn.prepareStatement(INSERT_SQL)) {
 
-            httpclient.execute(httpget, response -> {
-                System.out.println("Response status: " + response.getCode());
-                System.out.println("Response body: " + EntityUtils.toString(response.getEntity()));
-                return null;
-            });
+            int count = 0;
 
-        } finally {
-            httpclient.close();
+            for (int i = 0; i < symbols.size(); i++) {
+                SymbolData symbol = symbols.get(i);
+                double price = symbol.getPrice();
+
+                if (price == 0.0) {
+                    Double existing = existingPrices.get(symbol.getSymbol());
+                    if (existing != null) {
+                        price = existing;
+                    }
+                }
+
+                updatePs.setDouble(1, price);
+                updatePs.setString(2, symbol.getSymbol());
+                updatePs.addBatch();
+
+                insertPs.setString(1, symbol.getSymbol());
+                insertPs.setDouble(2, price);
+                insertPs.setString(3, symbol.getSymbol());
+                insertPs.addBatch();
+
+                count++;
+
+                if (count % BATCH_SIZE == 0 || i == symbols.size() - 1) {
+                    updatePs.executeBatch();
+                    insertPs.executeBatch();
+                    conn.commit();
+                    updatePs.clearBatch();
+                    insertPs.clearBatch();
+                    count = 0;
+                }
+            }
+
+        } catch (SQLException e) {
+            conn.rollback();
+            e.printStackTrace();
+        }
+
+    } catch (SQLException e) {
+        e.printStackTrace();
+    }
+}
+
+private Map<String, Double> preloadExistingPrices(Connection conn, List<SymbolData> symbols) throws SQLException {
+    Map<String, Double> map = new HashMap<>();
+    Set<String> uniqueSymbols = symbols.stream()
+                                       .map(SymbolData::getSymbol)
+                                       .collect(Collectors.toSet());
+
+    if (uniqueSymbols.isEmpty()) return map;
+
+    String placeholders = uniqueSymbols.stream()
+                                       .map(s -> "?")
+                                       .collect(Collectors.joining(","));
+    String sql = "SELECT symbol, price FROM symbols WHERE symbol IN (" + placeholders + ")";
+
+    try (PreparedStatement ps = conn.prepareStatement(sql)) {
+        int i = 1;
+        for (String sym : uniqueSymbols) {
+            ps.setString(i++, sym);
+        }
+
+        try (ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                map.put(rs.getString("symbol"), rs.getDouble("price"));
+            }
         }
     }
+
+    return map;
 }
